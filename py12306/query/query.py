@@ -30,11 +30,15 @@ class Query:
 
     def __init__(self):
         self.session = Request()
-        self.request_device_id()
+        # A clean install with no configured jobs must support offline
+        # diagnostics and Web startup without contacting external services.
+        if Config().QUERY_JOBS:
+            self.request_device_id()
         self.cluster = Cluster()
         self.update_query_interval()
         self.update_query_jobs()
-        self.get_query_api_type()
+        if Config().QUERY_JOBS:
+            self.get_query_api_type()
 
     def update_query_interval(self, auto=False):
         self.interval = init_interval_by_number(Config().QUERY_INTERVAL)

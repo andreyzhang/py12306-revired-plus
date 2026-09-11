@@ -2,7 +2,18 @@ import requests
 from requests.exceptions import *
 
 from py12306.helpers.func import *
-from requests_html import HTMLSession, HTMLResponse
+try:
+    from requests_html import HTMLSession, HTMLResponse
+except ImportError:
+    # requests-html currently breaks with newer lxml releases. Keep the
+    # network client usable for JSON/API calls without its optional renderer.
+    class HTMLResponse(requests.Response):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+    class HTMLSession(requests.Session):
+        @staticmethod
+        def _handle_response(response, **kwargs):
+            return response
 
 requests.packages.urllib3.disable_warnings()
 

@@ -4,8 +4,12 @@ import pickle
 import sys
 import time
 
-import redis
-from redis.client import PubSub
+try:
+    import redis
+    from redis.client import PubSub
+except ImportError:  # Redis is only needed when CLUSTER_ENABLED=1
+    redis = None
+    class PubSub: pass
 
 from py12306.cluster.redis import Redis
 from py12306.config import Config

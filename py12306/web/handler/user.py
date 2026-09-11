@@ -26,7 +26,7 @@ def login():
 
 
 @user.route('/users', methods=['GET'])
-@jwt_required
+@jwt_required()
 def users():
     """
     用户任务列表
@@ -38,7 +38,7 @@ def users():
 
 
 @user.route('/user/info', methods=['GET'])
-@jwt_required
+@jwt_required()
 def user_info():
     """
     获取用户信息
@@ -60,3 +60,4 @@ def convert_job_to_info(job: UserJob):
         'last_heartbeat': timestamp_to_time(job.last_heartbeat) if job.last_heartbeat else '-',
         'login_num': job.login_num
     }
+

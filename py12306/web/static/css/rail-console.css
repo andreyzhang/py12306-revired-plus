@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+:root{--ink:#eaf1f5;--panel:rgba(255,255,255,.68);--line:rgba(76,112,135,.18);--paper:#203746;--muted:#607887;--signal:#287c9b;--mint:#3ba99b;}
+html,body,#app{min-height:100%;background:var(--ink);color:var(--paper);font-family:'DM Sans','Microsoft YaHei',sans-serif}
+body{margin:0;background-image:radial-gradient(circle at 12% 0%,rgba(157,211,220,.42),transparent 32%),radial-gradient(circle at 95% 90%,rgba(185,220,210,.34),transparent 35%),linear-gradient(135deg,#f5f8fa 0%,#e7f0f3 55%,#eef5f2 100%)}
+.nav-bar{background:rgba(255,255,255,.64)!important;backdrop-filter:blur(18px);border-bottom:1px solid var(--line);box-shadow:0 8px 26px rgba(59,91,106,.08)}
+.logo-area h2{font-family:'Space Mono',monospace!important;letter-spacing:-1px;color:var(--signal)!important}
+#menus{background:rgba(255,255,255,.48)!important;backdrop-filter:blur(18px);border-right:1px solid var(--line);min-height:calc(100vh - 60px);width:210px!important}
+#content .el-aside{width:210px!important}
+#menus .avatar{transform:scale(.82)}
+#menus .name{font-size:14px!important}
+#menus .name,.el-menu-item{color:var(--muted)!important}.el-menu-item:hover,.el-menu-item.is-active{background:rgba(59,169,155,.13)!important;color:var(--signal)!important;border-right:3px solid var(--mint)}
+#content-body{padding:34px 42px!important;background:transparent!important}
+.card,.el-card{background:var(--panel)!important;backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.75)!important;border-radius:16px!important;box-shadow:0 12px 32px rgba(64,97,112,.10)!important;color:var(--paper)}
+.card-title,.action-title{color:var(--paper)!important;font-weight:600;letter-spacing:-.4px}
+.system-state .card{min-height:108px;transition:transform .2s ease,border-color .2s ease}.system-state .card:hover{transform:translateY(-3px);border-color:rgba(114,214,194,.45)!important}
+.system-state .value{font-family:'Space Mono',monospace;color:var(--signal)!important;font-size:28px!important}
+.el-button--primary{background:var(--signal)!important;border-color:var(--signal)!important;color:#fff!important;font-weight:700;border-radius:8px!important}
+.el-input__inner{background:rgba(255,255,255,.7)!important;border-color:var(--line)!important;color:var(--paper)!important;border-radius:8px!important}
+#login{max-width:480px!important}.height-full{background:radial-gradient(circle at 50% 30%,rgba(114,214,194,.12),transparent 45%)}
+#login .card{padding:42px!important}#login .card-title{font-family:'Space Mono',monospace;color:var(--signal)!important}
+*:focus-visible{outline:2px solid var(--mint);outline-offset:3px}
+@media(max-width:800px){#content-body{padding:24px 18px!important}.el-aside{width:220px!important}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}

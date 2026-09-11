@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
-import png
+try:
+    import png
+except ImportError:
+    png = None
 
 
 def print_qrcode(path):
@@ -11,6 +14,9 @@ def print_qrcode(path):
     :param path: 二维码图片路径 (PNG 格式)
     :return: None
     """
+    if png is None:
+        print('二维码已保存：%s（安装 pypng 后可在终端渲染）' % path, flush=True)
+        return
     reader = png.Reader(path)
     width, height, rows, info = reader.read()
     lines = list(rows)

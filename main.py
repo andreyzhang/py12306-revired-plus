@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 import sys
 
-from py12306.app import *
+try:
+    from py12306.app import *
+except ModuleNotFoundError as exc:
+    # Give a useful startup error instead of a long import traceback.
+    print('启动失败：缺少运行依赖 %s。请执行 python -m pip install -r requirements.txt' % exc.name)
+    print('如果当前网络无法访问 PyPI，请先配置可用的 pip 镜像或离线 wheel。')
+    raise SystemExit(2)
 from py12306.helpers.cdn import Cdn
 from py12306.log.common_log import CommonLog
 from py12306.query.query import Query

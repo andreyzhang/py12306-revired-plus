@@ -14,7 +14,7 @@ log = Blueprint('log', __name__)
 
 
 @log.route('/log/output', methods=['GET'])
-@jwt_required
+@jwt_required()
 def log_output():
     """
     日志
@@ -49,3 +49,4 @@ def log_output():
         'last_line': last_line,
         'data': res
     })
+

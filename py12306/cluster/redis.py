@@ -1,12 +1,17 @@
 import json
 import pickle
 
-import redis
+try:
+    import redis
+    from redis import Redis as PyRedis
+except ImportError:
+    class PyRedis:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError('Redis 依赖不可用；请安装 redis 与 async-timeout，或关闭 CLUSTER_ENABLED')
 
 from py12306.config import Config
 from py12306.helpers.func import *
 from py12306.log.redis_log import RedisLog
-from redis import Redis as PyRedis
 
 
 @singleton
