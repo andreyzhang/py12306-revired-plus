@@ -35,7 +35,7 @@ KEY_LABELS = {
  'NOTIFICATION_API_APP_CODE':'语音服务 AppCode','NOTIFICATION_VOICE_CODE_PHONE':'接收通知的手机号','DINGTALK_WEBHOOK':'钉钉机器人地址',
  'TELEGRAM_BOT_API_URL':'Telegram Bot 地址','SERVERCHAN_KEY':'ServerChan 密钥','PUSHBEAR_KEY':'PushBear 密钥','BARK_PUSH_URL':'Bark 推送地址',
  'EMAIL_SENDER':'发件邮箱','EMAIL_RECEIVER':'收件邮箱','EMAIL_SERVER_HOST':'邮箱服务器','EMAIL_SERVER_USER':'邮箱账号','EMAIL_SERVER_PASSWORD':'邮箱密码',
- 'CDN_CHECK_TIME_OUT':'CDN 检测超时（秒）'
+ 'CDN_CHECK_TIME_OUT':'CDN 检测超时（秒）','CACHE_RAIL_ID_ENABLED':'使用浏览器缓存标识','QUERY_JOB_THREAD_ENABLED':'每个任务单独运行线程','AUTO_CODE_PLATFORM':'验证码方式','NOTIFICATION_BY_VOICE_CODE':'电话语音通知','NOTIFICATION_VOICE_CODE_TYPE':'语音服务商','TELEGRAM_ENABLED':'Telegram 通知','SERVERCHAN_ENABLED':'微信 ServerChan 通知','PUSHBEAR_ENABLED':'微信 PushBear 通知','BARK_ENABLED':'Bark 通知','EMAIL_ENABLED':'邮件通知','WEB_ENABLE':'开启 Web 管理','CDN_ENABLED':'使用备用查询节点','CDN_CHECK_TIME_OUT':'CDN 检测超时（秒）','API_USER_CODE_QCR_API':'自定义验证码接口','REQUEST_MAX_RETRY':'网络重试次数','QUERY_INTERVAL':'余票查询间隔（秒）','USER_HEARTBEAT_INTERVAL':'账号状态检查间隔（秒）','OUT_PUT_LOG_TO_FILE_ENABLED':'保存日志到文件','OUT_PUT_LOG_TO_FILE_PATH':'日志文件位置'
 }
 
 # Internal paths and derived constants are implementation details, not user settings.
