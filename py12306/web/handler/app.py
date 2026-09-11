@@ -93,7 +93,7 @@ def menus():
         {"id": 30, "name": "查询任务", "url": "/query", "icon": "fa fa-infinity"},
         {"id": 40, "name": "实时日志", "url": "/log/realtime", "icon": "fa fa-signature"},
         {"id": 50, "name": "帮助", "url": "/help", "icon": "fa fa-search"}
-        ,{"id": 60, "name": "配置中心", "url": "/config", "icon": "fa fa-sliders-h"}
+        ,{"id": 60, "name": "配置中心", "url": "/static/config.html", "icon": "fa fa-sliders-h"}
     ]
     return jsonify(menus)
 
@@ -187,4 +187,5 @@ def config_schema():
 def validate_config_api():
     values=request.get_json(silent=True) or {}; errors=validate_config(values,Config())
     return jsonify({'valid':not errors,'errors':errors})
+
 
