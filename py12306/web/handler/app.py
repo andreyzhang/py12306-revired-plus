@@ -27,6 +27,9 @@ SENSITIVE_KEYS={'PASSWORD','WEB_USER','AUTO_CODE_ACCOUNT','DINGTALK_WEBHOOK','TE
 
 def config_keys(cfg): return sorted({k for k in dir(cfg) if k.isupper() and not k.startswith('_')})
 
+# Internal paths and derived constants are implementation details, not user settings.
+DISPLAY_EXCLUDE={'PROJECT_DIR','RUNTIME_DIR','QUERY_DATA_DIR','USER_DATA_DIR','STATION_FILE','CONFIG_FILE','WEB_ENTER_HTML_PATH','CDN_ITEM_FILE','CDN_ENABLED_AVAILABLE_ITEM_FILE','SEAT_TYPES','ORDER_SEAT_TYPES'}
+
 def validate_config(values, cfg):
     errors=[]; accounts=values.get('USER_ACCOUNTS', cfg.USER_ACCOUNTS) or []; jobs=values.get('QUERY_JOBS', cfg.QUERY_JOBS) or []
     keys=[str(a.get('key')) for a in accounts if isinstance(a,dict)]
@@ -137,7 +140,7 @@ def stop_ticketing():
 @jwt_required()
 def config_api():
     cfg = Config()
-    all_keys = sorted({k for k in dir(cfg) if k.isupper() and not k.startswith('_')})
+    all_keys = [k for k in config_keys(cfg) if k not in DISPLAY_EXCLUDE]
     if request.method == 'GET':
         return jsonify({k: ('••••••' if k in SENSITIVE_KEYS and getattr(cfg,k) else getattr(cfg,k)) for k in all_keys})
     values = request.get_json(silent=True) or {}
@@ -163,6 +166,7 @@ def config_api():
 def config_schema():
     cfg=Config(); result=[]
     for key in config_keys(cfg):
+        if key in DISPLAY_EXCLUDE: continue
         title,help_text,kind=CONFIG_META.get(key,(key,'高级配置项','advanced'))
         result.append({'key':key,'title':title,'help':help_text,'type':kind,'value':getattr(cfg,key)})
     return jsonify(result)
