@@ -31,6 +31,9 @@ class App:
     # Web controls this flag; the service remains idle until explicitly started.
     TICKETING_STARTED = False
     TICKETING_THREADS_STARTED = False
+    TICKETING_STATUS = 'idle'
+    TICKETING_ERROR = ''
+    TICKETING_STARTED_AT = None
     """
     程序主类
     TODO 代码需要优化

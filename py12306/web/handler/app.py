@@ -3,6 +3,7 @@ import re
 
 from flask import Blueprint, request, send_file
 import threading
+import datetime
 from flask.json import jsonify
 from flask_jwt_extended import (jwt_required)
 
@@ -11,6 +12,44 @@ from py12306.query.query import Query
 from py12306.user.user import User
 
 app = Blueprint('app', __name__)
+
+CONFIG_META = {
+ 'USER_ACCOUNTS': ('12306账号','账号列表（默认扫码登录）','accounts'), 'QUERY_JOBS': ('购票任务','出发日期、车站、乘客和座席','jobs'),
+ 'QUERY_INTERVAL': ('查询间隔','两次查询之间的秒数，建议不低于1秒','number'), 'REQUEST_MAX_RETRY': ('请求重试次数','网络失败时自动重试次数','number'),
+ 'USER_HEARTBEAT_INTERVAL': ('登录检查间隔','检查账号状态的秒数','number'), 'AUTO_CODE_PLATFORM': ('验证码方式','免费验证码服务或自定义服务','select'),
+ 'NOTIFICATION_BY_VOICE_CODE': ('语音通知','下单成功后拨打电话通知','boolean'), 'DINGTALK_ENABLED': ('钉钉通知','发送消息到钉钉机器人','boolean'),
+ 'TELEGRAM_ENABLED': ('Telegram通知','发送消息到 Telegram','boolean'), 'SERVERCHAN_ENABLED': ('微信通知','通过 ServerChan 推送消息','boolean'),
+ 'PUSHBEAR_ENABLED': ('PushBear通知','通过 PushBear 推送消息','boolean'), 'BARK_ENABLED': ('Bark通知','推送到 iPhone Bark','boolean'),
+ 'EMAIL_ENABLED': ('邮件通知','发送邮件通知','boolean'), 'CLUSTER_ENABLED': ('分布式集群','只有使用 Redis 多节点时开启','boolean'),
+ 'WEB_ENABLE': ('开启管理页面','提供 Web 管理服务','boolean'), 'WEB_PORT': ('管理端口','本机 Web 服务端口','number'), 'CDN_ENABLED': ('CDN查询','使用备用查询节点','boolean'),
+}
+SENSITIVE_KEYS={'PASSWORD','WEB_USER','AUTO_CODE_ACCOUNT','DINGTALK_WEBHOOK','TELEGRAM_BOT_API_URL','SERVERCHAN_KEY','PUSHBEAR_KEY','BARK_PUSH_URL','NOTIFICATION_API_APP_CODE','RAIL_DEVICEID','RAIL_EXPIRATION'}
+
+def config_keys(cfg): return sorted({k for k in dir(cfg) if k.isupper() and not k.startswith('_')})
+
+def validate_config(values, cfg):
+    errors=[]; accounts=values.get('USER_ACCOUNTS', cfg.USER_ACCOUNTS) or []; jobs=values.get('QUERY_JOBS', cfg.QUERY_JOBS) or []
+    keys=[str(a.get('key')) for a in accounts if isinstance(a,dict)]
+    if len(keys)!=len(set(keys)): errors.append('账号 key 不能重复')
+    if values.get('QUERY_INTERVAL',cfg.QUERY_INTERVAL) < 0.5: errors.append('查询间隔不能小于 0.5 秒')
+    if not isinstance(jobs,list): errors.append('购票任务必须是列表')
+    for i,job in enumerate(jobs):
+        if not isinstance(job,dict): errors.append('任务 %d 格式错误'%(i+1)); continue
+        if not job.get('left_dates'): errors.append('任务 %d 未设置出发日期'%(i+1))
+        for d in job.get('left_dates',[]):
+            try:
+                day=datetime.datetime.strptime(str(d),'%Y-%m-%d').date()
+                if day < datetime.date.today(): errors.append('任务 %d 包含过去日期'%(i+1))
+            except ValueError: errors.append('任务 %d 日期格式应为 YYYY-MM-DD'%(i+1))
+        st=job.get('stations',{}); sts=st if isinstance(st,list) else [st]
+        from py12306.helpers.station import Station
+        for pair in sts:
+            if not isinstance(pair,dict) or not Station.get_station_by_name(pair.get('left','')): errors.append('任务 %d 出发站不存在'%(i+1))
+            if not isinstance(pair,dict) or not Station.get_station_by_name(pair.get('arrive','')): errors.append('任务 %d 到达站不存在'%(i+1))
+        if job.get('train_numbers') and job.get('except_train_numbers'): errors.append('任务 %d 不能同时设置允许和排除车次'%(i+1))
+    for k in ('WEB_PORT','REQUEST_MAX_RETRY','USER_HEARTBEAT_INTERVAL'):
+        if k in values and (not isinstance(values[k],int) or values[k] <= 0): errors.append('%s 必须是正整数'%k)
+    return errors
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -61,14 +100,31 @@ def actions():
 @jwt_required()
 def start_ticketing():
     from py12306.app import App
+    errors=validate_config({}, Config())
+    if errors: App.TICKETING_STATUS='failed'; App.TICKETING_ERROR='；'.join(errors); return jsonify({'started':False,'errors':errors}),400
     if not App.TICKETING_THREADS_STARTED:
+        App.TICKETING_STATUS='starting'
         App.TICKETING_STARTED = True
         App.TICKETING_THREADS_STARTED = True
         from py12306.user.user import User
         from py12306.query.query import Query
         threading.Thread(target=User.run, daemon=True).start()
         threading.Thread(target=Query.run, daemon=True).start()
-    return jsonify({'started': True})
+        App.TICKETING_STATUS='running'
+    return jsonify({'started': True, 'status': App.TICKETING_STATUS})
+
+@app.route('/app/ticketing/status', methods=['GET'])
+@jwt_required()
+def ticketing_status():
+    from py12306.app import App
+    return jsonify({'status':App.TICKETING_STATUS,'error':App.TICKETING_ERROR,'started_at':App.TICKETING_STARTED_AT})
+
+@app.route('/app/ticketing/stop', methods=['POST'])
+@jwt_required()
+def stop_ticketing():
+    from py12306.app import App
+    App.TICKETING_STARTED=False; App.TICKETING_STATUS='idle'
+    return jsonify({'stopped':True,'status':'idle'})
 
 @app.route('/app/config', methods=['GET', 'PUT'])
 @jwt_required()
@@ -76,10 +132,11 @@ def config_api():
     cfg = Config()
     all_keys = sorted({k for k in dir(cfg) if k.isupper() and not k.startswith('_')})
     if request.method == 'GET':
-        return jsonify({k: getattr(cfg, k) for k in all_keys})
+        return jsonify({k: ('••••••' if k in SENSITIVE_KEYS and getattr(cfg,k) else getattr(cfg,k)) for k in all_keys})
     values = request.get_json(silent=True) or {}
     allowed = {k for k in all_keys if k not in cfg.disallow_update_configs and k not in {'PROJECT_DIR'}}
     for key, value in values.items():
+        if key in SENSITIVE_KEYS and value == '••••••': continue
         if key in allowed:
             setattr(cfg, key, value)
     # Persist edits as simple assignments; Config's watcher reloads them.
@@ -93,4 +150,19 @@ def config_api():
     except OSError:
         pass
     return jsonify({'saved': sorted(set(values) & allowed), 'hot_loaded': True})
+
+@app.route('/app/config/schema', methods=['GET'])
+@jwt_required()
+def config_schema():
+    cfg=Config(); result=[]
+    for key in config_keys(cfg):
+        title,help_text,kind=CONFIG_META.get(key,(key,'高级配置项','advanced'))
+        result.append({'key':key,'title':title,'help':help_text,'type':kind,'value':getattr(cfg,key)})
+    return jsonify(result)
+
+@app.route('/app/config/validate', methods=['POST'])
+@jwt_required()
+def validate_config_api():
+    values=request.get_json(silent=True) or {}; errors=validate_config(values,Config())
+    return jsonify({'valid':not errors,'errors':errors})
 

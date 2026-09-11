@@ -1,23 +1,5 @@
-(function () {
-  function token(){ return localStorage.getItem('user_token') || ''; }
-  function call(path, opts){ opts=opts||{}; opts.headers=Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+token()},opts.headers||{}); return fetch(path,opts); }
-  function addUi(){
-    if(document.getElementById('console-start')) return;
-    var actions=document.querySelector('.actions ul');
-    if(actions){
-      var li=document.createElement('li'); li.className='float-left margin-left-3-rem';
-      li.innerHTML='<a id="console-start" class="color-white vertical-center" href="#"><i class="fa fa-play margin-right-s5-rem"></i><span>开始抢票</span></a>';
-      actions.insertBefore(li, actions.firstChild); li.firstChild.onclick=function(e){e.preventDefault(); call('/app/ticketing/start',{method:'POST'}).then(function(){li.firstChild.querySelector('span').textContent='抢票运行中';});};
-    }
-    var menu=document.querySelector('#menus .el-menu');
-    if(menu && !document.getElementById('console-config')){ var item=document.createElement('li'); item.className='el-menu-item'; item.id='console-config'; item.innerHTML='<i class="fa fa-sliders-h"></i><span>配置中心</span>'; menu.appendChild(item); item.onclick=openConfig; }
-  }
-  function openConfig(){
-    if(document.getElementById('config-panel')) return;
-    var panel=document.createElement('div'); panel.id='config-panel'; panel.innerHTML='<div class="config-modal"><div class="config-head"><h2>配置中心</h2><button id="config-close">×</button></div><p class="config-note">修改后立即写入运行配置并热加载。</p><div id="config-fields">加载中…</div><button id="config-save">保存配置</button></div>';
-    document.body.appendChild(panel); document.getElementById('config-close').onclick=function(){panel.remove();};
-    call('/app/config').then(function(r){return r.json();}).then(function(data){var box=document.getElementById('config-fields'); box.innerHTML=Object.keys(data).map(function(k){var v=typeof data[k]==='object'?JSON.stringify(data[k]):data[k]; return '<label>'+k+'<input data-key="'+k+'" value="'+String(v).replace(/"/g,'&quot;')+'"></label>';}).join('');});
-    document.getElementById('config-save').onclick=function(){var out={}; panel.querySelectorAll('[data-key]').forEach(function(x){try{out[x.dataset.key]=JSON.parse(x.value);}catch(e){out[x.dataset.key]=x.value;}}); call('/app/config',{method:'PUT',body:JSON.stringify(out)}).then(function(){document.querySelector('.config-note').textContent='已保存，配置已热加载。';});};
-  }
-  setInterval(addUi,800); addUi();
-})();
+(function(){
+function token(){return localStorage.getItem('user_token')||''} function api(u,o){o=o||{};o.headers=Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+token()},o.headers||{});return fetch(u,o)}
+function ui(){if(!document.querySelector('.actions ul'))return;var a=document.querySelector('.actions ul');if(!document.getElementById('ticket-start')){var x=document.createElement('li');x.className='float-left margin-left-3-rem';x.innerHTML='<a id="ticket-start" class="color-white vertical-center" href="#"><i class="fa fa-play"></i><span>开始抢票</span></a>';a.insertBefore(x,a.firstChild);x.onclick=function(e){e.preventDefault();api('/app/ticketing/start',{method:'POST'}).then(function(r){return r.json()}).then(function(d){x.querySelector('span').textContent=d.started?'抢票运行中':'启动失败'})}}var m=document.querySelector('#menus .el-menu');if(m&&!document.getElementById('config-entry')){var c=document.createElement('li');c.id='config-entry';c.className='el-menu-item';c.innerHTML='<i class="fa fa-sliders-h"></i><span>配置中心</span>';m.appendChild(c);c.onclick=config}}
+function config(){if(document.getElementById('config-panel'))return;var p=document.createElement('div');p.id='config-panel';p.innerHTML='<div class="config-modal"><div class="config-head"><h2>配置中心</h2><button id="config-close">×</button></div><p class="config-note">按分类填写，保存前会自动检查日期、车站、账号和任务。</p><div id="config-fields">加载中…</div><button id="config-save">检查并保存</button></div>';document.body.appendChild(p);p.querySelector('#config-close').onclick=function(){p.remove()};Promise.all([api('/app/config/schema').then(function(r){return r.json()}),api('/app/config').then(function(r){return r.json()})]).then(function(z){var s=z[0],v=z[1],groups={};s.forEach(function(i){(groups[i.title]||(groups[i.title]=[])).push(i)});p.querySelector('#config-fields').innerHTML=Object.keys(groups).map(function(g){return '<section><h3>'+g+'</h3>'+groups[g].map(function(i){var val=v[i.key],x=typeof val==='object'?JSON.stringify(val):val;return '<label>'+i.title+'<small>'+i.help+'</small><input data-key="'+i.key+'" value="'+String(x==null?'':x).replace(/"/g,'&quot;')+'"></label>'}).join('')+'</section>'}).join('')});p.querySelector('#config-save').onclick=function(){var out={};p.querySelectorAll('[data-key]').forEach(function(x){try{out[x.dataset.key]=JSON.parse(x.value)}catch(e){out[x.dataset.key]=x.value}});api('/app/config/validate',{method:'POST',body:JSON.stringify(out)}).then(function(r){return r.json()}).then(function(d){if(!d.valid){p.querySelector('.config-note').textContent=d.errors.join('；');return}api('/app/config',{method:'PUT',body:JSON.stringify(out)}).then(function(){p.querySelector('.config-note').textContent='已保存，配置已热加载。'})})}}
+setInterval(ui,800);ui();})();
