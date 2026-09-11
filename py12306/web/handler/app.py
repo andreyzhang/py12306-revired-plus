@@ -4,10 +4,11 @@ import re
 from flask import Blueprint, request, send_file
 import threading
 import datetime
+from os import path
 from flask.json import jsonify
 from flask_jwt_extended import (jwt_required)
 
-from py12306.config import Config
+from py12306.config import Config, EnvLoader
 from py12306.query.query import Query
 from py12306.user.user import User
 
@@ -25,7 +26,11 @@ CONFIG_META = {
 }
 SENSITIVE_KEYS={'PASSWORD','WEB_USER','AUTO_CODE_ACCOUNT','DINGTALK_WEBHOOK','TELEGRAM_BOT_API_URL','SERVERCHAN_KEY','PUSHBEAR_KEY','BARK_PUSH_URL','NOTIFICATION_API_APP_CODE','RAIL_DEVICEID','RAIL_EXPIRATION'}
 
-def config_keys(cfg): return sorted({k for k in dir(cfg) if k.isupper() and not k.startswith('_')})
+def config_keys(cfg):
+    """Return only public settings documented by env.py.example plus local additions."""
+    documented = {k for k, _ in EnvLoader.load_with_file(path.join(cfg.PROJECT_DIR, 'env.py.example'))}
+    current = {k for k, _ in getattr(cfg, 'envs', [])}
+    return sorted((documented | current) - DISPLAY_EXCLUDE)
 
 KEY_LABELS = {
  'REDIS_HOST':'Redis 主机','REDIS_PORT':'Redis 端口','REDIS_PASSWORD':'Redis 密码','NODE_NAME':'节点名称',
