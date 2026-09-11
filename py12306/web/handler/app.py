@@ -90,8 +90,10 @@ def actions():
     """
     操作列表
     """
+    from py12306.app import App
+    running = App.TICKETING_STATUS in ('starting', 'running')
     actions = [
-        {"text": "开始抢票" if not __import__('py12306.app', fromlist=['App']).App.TICKETING_STARTED else "抢票运行中", "key": 'start_ticketing', "link": "", "icon": "fa fa-play"},
+        {"text": "停止抢票" if running else "开始抢票", "key": 'stop_ticketing' if running else 'start_ticketing', "link": "", "icon": "fa fa-stop" if running else "fa fa-play"},
         {"text": "退出登录", "key": 'logout', "link": "", "icon": "fa fa-sign-out-alt"}
     ]
     return jsonify(actions)
@@ -123,7 +125,12 @@ def ticketing_status():
 @jwt_required()
 def stop_ticketing():
     from py12306.app import App
-    App.TICKETING_STARTED=False; App.TICKETING_STATUS='idle'
+    App.TICKETING_STARTED=False; App.TICKETING_STATUS='idle'; App.TICKETING_ERROR=''
+    try:
+        for job in list(Query().jobs): job.destroy()
+        for user in list(User().users): user.destroy()
+    except Exception:
+        pass
     return jsonify({'stopped':True,'status':'idle'})
 
 @app.route('/app/config', methods=['GET', 'PUT'])
