@@ -26,3 +26,5 @@ body{margin:0;background-image:radial-gradient(circle at 12% 0%,rgba(157,211,220
 #ticket-stop,#ticket-stop *{color:#c94b55!important}.actions li:has(.fa-stop) a{color:#c94b55!important}
 
 .config-section{border-top:1px solid var(--line);padding:16px 0}.config-section h3{margin:0 0 12px;color:var(--signal)}.config-section label{margin:10px 0}.config-section small{display:block;color:var(--muted);font-size:12px;margin:3px 0 6px}.config-section textarea{width:100%;box-sizing:border-box;resize:vertical;font:13px 'DM Sans',sans-serif}.config-advanced-toggle{margin:10px 0;padding:9px 14px;border:1px solid var(--line);background:rgba(255,255,255,.5);border-radius:8px;color:var(--signal);cursor:pointer}
+
+.friendly-accounts,.friendly-jobs{border-top:1px solid var(--line);padding:12px 0}.friendly-accounts input,.friendly-accounts select,.friendly-jobs input{display:block;width:100%;box-sizing:border-box;margin:7px 0;padding:9px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.7)}
