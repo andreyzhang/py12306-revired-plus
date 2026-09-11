@@ -28,6 +28,9 @@ def app_available_check():
 
 @singleton
 class App:
+    # Web controls this flag; the service remains idle until explicitly started.
+    TICKETING_STARTED = False
+    TICKETING_THREADS_STARTED = False
     """
     程序主类
     TODO 代码需要优化

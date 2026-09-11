@@ -28,8 +28,10 @@ def main():
     ####### 运行任务
     Web.run()
     Cdn.run()
-    User.run()
-    Query.run()
+    # Web mode owns the ticketing lifecycle. Click "开始抢票" to launch it.
+    if App.TICKETING_STARTED:
+        User.run()
+        Query.run()
     if not Const.IS_TEST:
         while True:
             sleep(10000)
