@@ -27,6 +27,17 @@ SENSITIVE_KEYS={'PASSWORD','WEB_USER','AUTO_CODE_ACCOUNT','DINGTALK_WEBHOOK','TE
 
 def config_keys(cfg): return sorted({k for k in dir(cfg) if k.isupper() and not k.startswith('_')})
 
+KEY_LABELS = {
+ 'REDIS_HOST':'Redis 主机','REDIS_PORT':'Redis 端口','REDIS_PASSWORD':'Redis 密码','NODE_NAME':'节点名称',
+ 'NODE_IS_MASTER':'作为主节点','NODE_SLAVE_CAN_BE_MASTER':'允许从节点接管','OUT_PUT_LOG_TO_FILE_ENABLED':'写入日志文件',
+ 'OUT_PUT_LOG_TO_FILE_PATH':'日志文件位置','CACHE_RAIL_ID_ENABLED':'使用浏览器缓存标识','RAIL_EXPIRATION':'RailExpiration','RAIL_DEVICEID':'RailDeviceId',
+ 'API_USER_CODE_QCR_API':'自定义验证码接口','AUTO_CODE_ACCOUNT':'验证码平台账号','NOTIFICATION_VOICE_CODE_TYPE':'语音服务商',
+ 'NOTIFICATION_API_APP_CODE':'语音服务 AppCode','NOTIFICATION_VOICE_CODE_PHONE':'接收通知的手机号','DINGTALK_WEBHOOK':'钉钉机器人地址',
+ 'TELEGRAM_BOT_API_URL':'Telegram Bot 地址','SERVERCHAN_KEY':'ServerChan 密钥','PUSHBEAR_KEY':'PushBear 密钥','BARK_PUSH_URL':'Bark 推送地址',
+ 'EMAIL_SENDER':'发件邮箱','EMAIL_RECEIVER':'收件邮箱','EMAIL_SERVER_HOST':'邮箱服务器','EMAIL_SERVER_USER':'邮箱账号','EMAIL_SERVER_PASSWORD':'邮箱密码',
+ 'CDN_CHECK_TIME_OUT':'CDN 检测超时（秒）'
+}
+
 # Internal paths and derived constants are implementation details, not user settings.
 DISPLAY_EXCLUDE={'PROJECT_DIR','RUNTIME_DIR','QUERY_DATA_DIR','USER_DATA_DIR','STATION_FILE','CONFIG_FILE','WEB_ENTER_HTML_PATH','CDN_ITEM_FILE','CDN_ENABLED_AVAILABLE_ITEM_FILE','SEAT_TYPES','ORDER_SEAT_TYPES'}
 
@@ -167,7 +178,7 @@ def config_schema():
     cfg=Config(); result=[]
     for key in config_keys(cfg):
         if key in DISPLAY_EXCLUDE: continue
-        title,help_text,kind=CONFIG_META.get(key,(key,'高级配置项','advanced'))
+        title,help_text,kind=CONFIG_META.get(key,(KEY_LABELS.get(key, key.replace('_',' ').title()),'高级配置项，通常无需修改','advanced'))
         result.append({'key':key,'title':title,'help':help_text,'type':kind,'value':getattr(cfg,key)})
     return jsonify(result)
 
