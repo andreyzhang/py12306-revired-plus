@@ -23,7 +23,8 @@ class Web:
         self.log.setLevel(logging.ERROR)
 
         self.register_blueprint()
-        self.session.config['JWT_SECRET_KEY'] = 'secret'  # 目前都是本地，暂不用放配置文件
+        # Use a stable key long enough for HS256 tokens.
+        self.session.config['JWT_SECRET_KEY'] = 'py12306-local-jwt-key-2026-change-if-exposed'
         self.session.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(seconds=60 * 60 * 24 * 7)  # Token 超时时间 7 天
         self.jwt = JWTManager(self.session)
 

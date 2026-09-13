@@ -1,4 +1,3 @@
-from base64 import b64decode
 from py12306.config import Config
 from py12306.cluster.cluster import Cluster
 from py12306.app import app_available_check
@@ -30,15 +29,9 @@ class Query:
 
     def __init__(self):
         self.session = Request()
-        # A clean install with no configured jobs must support offline
-        # diagnostics and Web startup without contacting external services.
-        if Config().QUERY_JOBS:
-            self.request_device_id()
         self.cluster = Cluster()
         self.update_query_interval()
         self.update_query_jobs()
-        if Config().QUERY_JOBS:
-            self.get_query_api_type()
 
     def update_query_interval(self, auto=False):
         self.interval = init_interval_by_number(Config().QUERY_INTERVAL)
@@ -63,6 +56,9 @@ class Query:
     @classmethod
     def check_before_run(cls):
         self = cls()
+        if self.query_jobs:
+            self.request_device_id()
+            self.get_query_api_type()
         self.init_jobs()
         self.is_ready = True
 
@@ -123,64 +119,15 @@ class Query:
         self.jobs.append(job)
         return job
 
-    def request_device_id(self, force_renew = False):
-        """
-        获取加密后的浏览器特征 ID
-        :return:
-        """
-        expire_time =  self.session.cookies.get('RAIL_EXPIRATION')
-        if not force_renew and expire_time and int(expire_time) - time_int_ms() > 0:
-            return
-        if 'pjialin' not in API_GET_BROWSER_DEVICE_ID:
-            return self.request_device_id2()
-        response = self.session.get(API_GET_BROWSER_DEVICE_ID)
-        if response.status_code == 200:
-            try:
-                result = json.loads(response.text)
-                response = self.session.get(b64decode(result['id']).decode())
-                if response.text.find('callbackFunction') >= 0:
-                    result = response.text[18:-2]
-                result = json.loads(result)
-                if not Config().is_cache_rail_id_enabled():
-                    self.session.cookies.update({
-                        'RAIL_EXPIRATION': result.get('exp'),
-                        'RAIL_DEVICEID': result.get('dfp'),
-                    })
-                else:
-                    self.session.cookies.update({
-                        'RAIL_EXPIRATION': Config().RAIL_EXPIRATION,
-                        'RAIL_DEVICEID': Config().RAIL_DEVICEID,
-                    })
-            except Exception:
-                return self.request_device_id()
-        else:
-            return self.request_device_id()
+    def request_device_id(self, force_renew=False):
+        from py12306.helpers.device_id import load_device_id
+        load_device_id(
+            self.session, Config(), API_GET_BROWSER_DEVICE_ID,
+            lambda message: QueryLog.add_quick_log(message).flush(), force_renew)
 
     def request_device_id2(self):
-        headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.61 Safari/537.36"
-        }
-        self.session.headers.update(headers)
-        response = self.session.get(API_GET_BROWSER_DEVICE_ID)
-        if response.status_code == 200:
-            try:
-                if response.text.find('callbackFunction') >= 0:
-                    result = response.text[18:-2]
-                    result = json.loads(result)
-                    if not Config().is_cache_rail_id_enabled():
-                       self.session.cookies.update({
-                           'RAIL_EXPIRATION': result.get('exp'),
-                           'RAIL_DEVICEID': result.get('dfp'),
-                       })
-                    else:
-                       self.session.cookies.update({
-                           'RAIL_EXPIRATION': Config().RAIL_EXPIRATION,
-                           'RAIL_DEVICEID': Config().RAIL_DEVICEID,
-                       })
-            except Exception:
-                return self.request_device_id2()
-        else:
-            return self.request_device_id2()
+        # Compatibility entry point for callers using an official JSONP URL.
+        return self.request_device_id()
 
     @classmethod
     def wait_for_ready(cls):
@@ -209,21 +156,20 @@ class Query:
     @classmethod
     def get_query_api_type(cls):
         import re
+        from py12306.helpers.device_id import StartupError
         self = cls()
         if self.api_type:
             return self.api_type
-        response = self.session.get(API_QUERY_INIT_PAGE)
-        if response.status_code == 200:
-            res = re.search(r'var CLeftTicketUrl = \'(.*)\';', response.text)
-            try:
-                self.api_type = res.group(1)
-            except Exception:
-                pass
-        if not self.api_type:
-            QueryLog.add_quick_log('查询地址获取失败, 正在重新获取...').flush()
-            sleep(get_interval_num(self.interval))
-        self.request_device_id(True)
-        return cls.get_query_api_type()
+        attempts = max(1, min(int(Config().REQUEST_MAX_RETRY), 3))
+        for attempt in range(1, attempts + 1):
+            response = self.session.get(API_QUERY_INIT_PAGE, timeout=5)
+            if response.status_code == 200:
+                res = re.search(r"var\s+CLeftTicketUrl\s*=\s*['\"]([^'\"]+)['\"]", response.text)
+                if res:
+                    self.api_type = res.group(1)
+                    return self.api_type
+            QueryLog.add_quick_log('查询地址获取失败（{}/{}）'.format(attempt, attempts)).flush()
+        raise StartupError('无法获取有效查询地址，已停止重试')
 
 # def get_jobs_from_cluster(self):
 #     jobs = self.cluster.session.get_dict(Cluster.KEY_JOBS)

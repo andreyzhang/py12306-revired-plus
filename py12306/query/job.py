@@ -48,7 +48,8 @@ class Job:
 
     interval = {}
     interval_additional = 0
-    interval_additional_max = 5
+    # Back off aggressively when 12306 returns an error/challenge response.
+    interval_additional_max = 60
 
     query = None
     cluster = None
@@ -243,7 +244,14 @@ class Job:
                                                            user.user_name))
                     stay_second(self.retry_time)  # 防止过多重复
             else:
-                order_result = self.do_order(user)
+                try:
+                    order_result = self.do_order(user)
+                except Exception as exc:
+                    # A malformed/blocked order page must not terminate the
+                    # query loop or the Web service.
+                    QueryLog.add_quick_log('下单流程异常，已跳过本次：{}'.format(
+                        type(exc).__name__)).flush()
+                    order_result = False
 
             # 任务已成功 通知集群停止任务
             if order_result:
@@ -263,11 +271,28 @@ class Job:
         if response.status_code != 200:
             QueryLog.print_query_error(response.reason, response.status_code)
             if self.interval_additional < self.interval_additional_max:
-                self.interval_additional += self.interval.get('min')
+                self.interval_additional = min(self.interval_additional_max,
+                                               max(10, self.interval_additional * 2 or 10))
         else:
-            self.interval_additional = 0
-        result = response.json().get('data.result')
-        return result if result else False
+            try:
+                payload = response.json()
+            except (ValueError, TypeError):
+                self.interval_additional = min(self.interval_additional_max,
+                                               max(10, self.interval_additional * 2 or 10))
+                QueryLog.add_quick_log('查询接口返回非 JSON，已自动降频至 {} 秒'.format(
+                    get_interval_num(self.interval) + self.interval_additional)).flush()
+                return False
+            data = payload.get('data') or {}
+            result = data.get('result')
+            if not result and (payload.get('messages') or data.get('message')):
+                self.interval_additional = min(self.interval_additional_max,
+                                               max(10, self.interval_additional * 2 or 10))
+                QueryLog.add_quick_log('查询接口返回异常，已自动降频至 {} 秒'.format(
+                    get_interval_num(self.interval) + self.interval_additional)).flush()
+                return False
+            if result:
+                self.interval_additional = max(0, self.interval_additional - 1)
+            return result if result else False
 
     def is_has_ticket(self, ticket_info):
         return self.get_info_of_ticket_num() == 'Y' and self.get_info_of_order_text() == '预订'

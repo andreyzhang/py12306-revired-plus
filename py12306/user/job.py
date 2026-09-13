@@ -286,7 +286,8 @@ class UserJob:
         while retry < Config().REQUEST_MAX_RETRY:
             retry += 1
             response = self.session.get(API_USER_LOGIN_CHECK)
-            is_login = response.json().get('data.is_login', False) == 'Y'
+            login_data = response.json().get('data') or {}
+            is_login = login_data.get('is_login', False) == 'Y'
             if is_login:
                 self.save_user()
                 self.set_last_heartbeat()
@@ -319,69 +320,15 @@ class UserJob:
             # TODO 处理获取失败情况
         return False
 
-    def request_device_id(self, force_renew = False):
-        """
-        获取加密后的浏览器特征 ID
-        :return:
-        """
-        # 判断cookie 是否过期，未过期可以不必下载
-        expire_time =  self.session.cookies.get('RAIL_EXPIRATION')
-        if not force_renew and expire_time and int(expire_time) - time_int_ms() > 0:
-            return
-        if 'pjialin' not in API_GET_BROWSER_DEVICE_ID:
-            return self.request_device_id2()
-        response = self.session.get(API_GET_BROWSER_DEVICE_ID)
-        if response.status_code == 200:
-            try:
-                result = json.loads(response.text)
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.61 Safari/537.36"
-                }
-                self.session.headers.update(headers)
-                response = self.session.get(base64.b64decode(result['id']).decode())
-                if response.text.find('callbackFunction') >= 0:
-                    result = response.text[18:-2]
-                result = json.loads(result)
-                if not Config().is_cache_rail_id_enabled():
-                   self.session.cookies.update({
-                       'RAIL_EXPIRATION': result.get('exp'),
-                       'RAIL_DEVICEID': result.get('dfp'),
-                   })
-                else:
-                   self.session.cookies.update({
-                       'RAIL_EXPIRATION': Config().RAIL_EXPIRATION,
-                       'RAIL_DEVICEID': Config().RAIL_DEVICEID,
-                   })
-            except Exception:
-                return self.request_device_id()
-        else:
-            return self.request_device_id()
+    def request_device_id(self, force_renew=False):
+        from py12306.helpers.device_id import load_device_id
+        load_device_id(
+            self.session, Config(), API_GET_BROWSER_DEVICE_ID,
+            lambda message: UserLog.add_quick_log(message).flush(), force_renew)
 
     def request_device_id2(self):
-        headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.61 Safari/537.36"
-        }
-        self.session.headers.update(headers)
-        response = self.session.get(API_GET_BROWSER_DEVICE_ID)
-        if response.status_code == 200:
-            try:
-                if response.text.find('callbackFunction') >= 0:
-                    result = response.text[18:-2]
-                    result = json.loads(result)
-                    if not Config().is_cache_rail_id_enabled():
-                       self.session.cookies.update({
-                           'RAIL_EXPIRATION': result.get('exp'),
-                           'RAIL_DEVICEID': result.get('dfp'),
-                       })
-                    else:
-                       self.session.cookies.update({
-                           'RAIL_EXPIRATION': Config().RAIL_EXPIRATION,
-                           'RAIL_DEVICEID': Config().RAIL_DEVICEID,
-                       })
-            except Exception:
-                return self.request_device_id2()
-        else:
-            return self.request_device_id2()
+        # Compatibility entry point for callers using an official JSONP URL.
+        return self.request_device_id()
 
     def login_did_success(self):
         """
@@ -447,7 +394,7 @@ class UserJob:
             retry += 1
             response = self.session.get(API_USER_INFO.get('url'))
             result = response.json()
-            user_data = result.get('data.userDTO.loginUserDTO')
+            user_data = ((result.get('data') or {}).get('userDTO') or {}).get('loginUserDTO')
             # 子节点访问会导致主节点登录失效 TODO 可快考虑实时同步 cookie
             if user_data:
                 self.update_user_info({**user_data, **{'user_name': user_data.get('name')}})
@@ -507,20 +454,48 @@ class UserJob:
         self.is_alive = False
 
     def response_login_check(self, response, **kwargs):
-        if Config().is_master() and response.json().get('data.noLogin') == 'true':  # relogin
+        response_data = response.json().get('data') or {}
+        if Config().is_master() and response_data.get('noLogin') == 'true':  # relogin
             self.handle_login(expire=True)
 
     def get_user_passengers(self):
         if self.passengers: return self.passengers
-        response = self.session.post(API_USER_PASSENGERS)
-        result = response.json()
-        if result.get('data.normal_passengers'):
-            self.passengers = result.get('data.normal_passengers')
+        # 12306 now requires an initDc visit to establish the passenger
+        # session; a direct POST is answered with noLogin=true and messages=[].
+        self.session.get(API_INITDC_URL)
+        response = self.session.post(API_USER_PASSENGERS, data={'_json_att': ''})
+        try:
+            result = response.json()
+        except (ValueError, TypeError):
+            attempt = getattr(self, '_passenger_fetch_attempts', 0) + 1
+            self._passenger_fetch_attempts = attempt
+            wait_time = get_interval_num(self.sleep_interval)
+            UserLog.add_quick_log('乘客接口返回非 JSON（HTTP {}），第 {} 次重试'.format(
+                response.status_code or '无响应', attempt)).flush()
+            if attempt >= Config().REQUEST_MAX_RETRY:
+                self._passenger_fetch_attempts = 0
+                return []
+            time.sleep(wait_time)
+            return self.get_user_passengers()
+        self._passenger_fetch_attempts = 0
+        data = result.get('data') or {}
+        if data.get('noLogin') == 'true':
+            UserLog.add_quick_log('乘客接口提示登录已失效，正在重新登录').flush()
+            if not getattr(self, '_passenger_relogin_attempted', False):
+                self._passenger_relogin_attempted = True
+                if self.handle_login(expire=True):
+                    self._passenger_relogin_attempted = False
+                    return self.get_user_passengers()
+            return []
+        passengers = data.get('normal_passengers')
+        if passengers:
+            self.passengers = passengers
             # 将乘客写入到文件
             with open(Config().USER_PASSENGERS_FILE % self.user_name, 'w', encoding='utf-8') as f:
                 f.write(json.dumps(self.passengers, indent=4, ensure_ascii=False))
             return self.passengers
         else:
+            self._passenger_relogin_attempted = False
             wait_time = get_interval_num(self.sleep_interval)
             UserLog.add_quick_log(
                 UserLog.MESSAGE_GET_USER_PASSENGERS_FAIL.format(
@@ -534,9 +509,20 @@ class UserJob:
         retry = 0
         while retry < Config().REQUEST_MAX_RETRY:
             retry += 1
-            response = self.session.post(API_USER_PASSENGERS)
-            result = response.json()
-            if result.get('data.normal_passengers'):
+            self.session.get(API_INITDC_URL)
+            response = self.session.post(API_USER_PASSENGERS, data={'_json_att': ''})
+            try:
+                result = response.json()
+            except (ValueError, TypeError):
+                UserLog.add_quick_log('乘客接口返回非 JSON（HTTP {}），正在重试'.format(
+                    response.status_code or '无响应')).flush()
+                stay_second(get_interval_num(self.sleep_interval))
+                continue
+            data = result.get('data') or {}
+            if data.get('noLogin') == 'true':
+                UserLog.add_quick_log('乘客接口提示登录已失效').flush()
+                return False
+            if (data.get('normal_passengers')):
                 return True
             else:
                 wait_time = get_interval_num(self.sleep_interval)
@@ -607,7 +593,7 @@ class UserJob:
         """
         data = {'_json_att': ''}
         response = self.session.post(API_INITDC_URL, data)
-        html = response.text
+        html = response.text or ''
         token = re.search(r'var globalRepeatSubmitToken = \'(.+?)\'', html)
         form = re.search(r'var ticketInfoForPassengerForm *= *(\{.+\})', html)
         order = re.search(r'var orderRequestDTO *= *(\{.+\})', html)
@@ -619,7 +605,15 @@ class UserJob:
             self.global_repeat_submit_token = token.groups()[0]
             self.ticket_info_for_passenger_form = json.loads(form.groups()[0].replace("'", '"'))
             self.order_request_dto = json.loads(order.groups()[0].replace("'", '"'))
-        except Exception:
+        except Exception as exc:
+            target = getattr(response, 'url', '') or ''
+            if 'passport' in target or 'login' in html.lower():
+                reason = '登录会话已失效或被 12306 风控拦截'
+            elif not token:
+                reason = '订单页未返回重复提交令牌，可能被 12306 限流'
+            else:
+                reason = '订单页格式发生变化（{}）'.format(type(exc).__name__)
+            OrderLog.add_quick_log('订单初始化失败：{}，本次放弃下单'.format(reason)).flush()
             return False, False, html  # TODO Error
 
         slide_val = re.search(r"var if_check_slide_passcode.*='(\d?)'", html)

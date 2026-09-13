@@ -13,6 +13,7 @@ from py12306.log.common_log import CommonLog
 from py12306.query.query import Query
 from py12306.user.user import User
 from py12306.web.web import Web
+from py12306.helpers.device_id import StartupError
 
 
 def main():
@@ -22,11 +23,23 @@ def main():
     CommonLog.print_configs()
     App.did_start()
 
+    # Start the management page before network-heavy query initialization.
+    # Otherwise a slow 12306 request prevents port 8008 from opening.
+    Web.run()
+
     App.run_check()
-    Query.check_before_run()
+    CommonLog.add_quick_log('正在初始化查询任务...').flush()
+    try:
+        Query.check_before_run()
+    except StartupError as exc:
+        CommonLog.add_quick_log('抢票初始化失败：{}'.format(exc)).flush()
+        if Config().WEB_ENABLE and not Config().is_slave() and not Const.IS_TEST:
+            CommonLog.add_quick_log('Web 后台仍可访问；修正配置或网络后请重启服务。').flush()
+            while True:
+                sleep(1)
+        raise SystemExit(1)
 
     ####### 运行任务
-    Web.run()
     Cdn.run()
     User.run()
     Query.run()
