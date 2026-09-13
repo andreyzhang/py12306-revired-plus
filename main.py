@@ -22,11 +22,12 @@ def main():
     CommonLog.print_configs()
     App.did_start()
 
+    # Web 管理服务必须优先启动，避免登录/查询初始化阻塞页面访问。
+    Web.run()
+
     App.run_check()
-    Query.check_before_run()
 
     ####### 运行任务
-    Web.run()
     Cdn.run()
     # Web mode owns the ticketing lifecycle. Click "开始抢票" to launch it.
     if App.TICKETING_STARTED:
@@ -70,3 +71,6 @@ def load_argvs():
 
 if __name__ == '__main__':
     main()
+
+
+

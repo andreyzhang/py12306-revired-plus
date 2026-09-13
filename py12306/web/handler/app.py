@@ -129,8 +129,16 @@ def start_ticketing():
         App.TICKETING_THREADS_STARTED = True
         from py12306.user.user import User
         from py12306.query.query import Query
-        threading.Thread(target=User.run, daemon=True).start()
-        threading.Thread(target=Query.run, daemon=True).start()
+        def run_worker(name, target):
+            try:
+                target()
+            except Exception as exc:
+                import logging
+                App.TICKETING_STATUS = 'failed'
+                App.TICKETING_ERROR = '{}: {}'.format(name, exc)
+                logging.getLogger(__name__).exception('%s 线程异常', name)
+        threading.Thread(target=run_worker, args=('登录', User.run), daemon=True, name='py12306-user').start()
+        threading.Thread(target=run_worker, args=('查询', Query.run), daemon=True, name='py12306-query').start()
         App.TICKETING_STATUS='running'
     return jsonify({'started': True, 'status': App.TICKETING_STATUS})
 

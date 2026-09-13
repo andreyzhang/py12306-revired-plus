@@ -286,13 +286,20 @@ class UserJob:
         while retry < Config().REQUEST_MAX_RETRY:
             retry += 1
             response = self.session.get(API_USER_LOGIN_CHECK)
-            is_login = response.json().get('data.is_login', False) == 'Y'
+            try:
+                result = response.json()
+            except (ValueError, TypeError):
+                UserLog.add_quick_log('登录状态接口返回非 JSON，保留当前会话并稍后重试').flush()
+                time.sleep(get_interval_num(self.sleep_interval))
+                continue
+            is_login = result.get('data.is_login', False) == 'Y'
             if is_login:
                 self.save_user()
                 self.set_last_heartbeat()
-                return self.get_user_info()  # 检测应该是不会维持状态，这里再请求下个人中心看有没有用，01-10 看来应该是没用  01-22 有时拿到的状态 是已失效的再加上试试
+                self.get_user_info()
+                return True
             time.sleep(get_interval_num(self.sleep_interval))
-        return is_login
+        return bool(getattr(self, 'user_loaded', False))
 
     def auth_uamtk(self):
         retry = 0
@@ -446,7 +453,14 @@ class UserJob:
         while retry < Config().REQUEST_MAX_RETRY:
             retry += 1
             response = self.session.get(API_USER_INFO.get('url'))
-            result = response.json()
+            try:
+                result = response.json()
+            except (ValueError, TypeError):
+                # 12306 may return an HTML/challenge page during rate limiting.
+                # Keep the login worker alive and retry instead of killing its thread.
+                UserLog.add_quick_log('获取用户信息返回非 JSON（可能触发风控），正在重试').flush()
+                time.sleep(get_interval_num(self.sleep_interval))
+                continue
             user_data = result.get('data.userDTO.loginUserDTO')
             # 子节点访问会导致主节点登录失效 TODO 可快考虑实时同步 cookie
             if user_data:
