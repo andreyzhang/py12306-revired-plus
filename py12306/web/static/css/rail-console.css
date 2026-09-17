@@ -16,8 +16,24 @@ body{margin:0;background-image:radial-gradient(circle at 12% 0%,rgba(157,211,220
 .system-state .value{font-family:'Space Mono',monospace;color:var(--signal)!important;font-size:28px!important}
 .el-button--primary{background:var(--signal)!important;border-color:var(--signal)!important;color:#fff!important;font-weight:700;border-radius:8px!important}
 .el-input__inner{background:rgba(255,255,255,.7)!important;border-color:var(--line)!important;color:var(--paper)!important;border-radius:8px!important}
+#log-realtime .refresh-switch{display:flex;align-items:center;gap:10px}
+#log-realtime .log-clear-button{height:32px;margin:0 4px 0 0!important;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.58);color:var(--muted);font-weight:600;cursor:pointer;transition:background-color .2s ease,border-color .2s ease,color .2s ease}
+#log-realtime .log-clear-button:hover{background:rgba(255,255,255,.88);border-color:rgba(40,124,155,.42);color:var(--signal)}
+#log-realtime .log-clear-button i{margin-right:6px}
 #login{max-width:480px!important}.height-full{background:radial-gradient(circle at 50% 30%,rgba(114,214,194,.12),transparent 45%)}
 #login .card{padding:42px!important}#login .card-title{font-family:'Space Mono',monospace;color:var(--signal)!important}
 *:focus-visible{outline:2px solid var(--mint);outline-offset:3px}
-@media(max-width:800px){#content-body{padding:24px 18px!important}.el-aside{width:220px!important}}
+@media(max-width:800px){
+#content .el-aside,#menus{width:64px!important;flex:0 0 64px}
+#menus .user-info,#menus .el-menu-item span{display:none!important}
+#menus .el-menu-item{padding:0!important;text-align:center}
+#menus .el-menu-item i{margin:0!important}
+#content-body{padding:16px 10px!important}
+#log-realtime{padding:18px 12px!important}
+#log-realtime .action-group{align-items:flex-start;flex-wrap:wrap;gap:10px}
+#log-realtime .action-title{width:100%;margin-bottom:0}
+#log-realtime .refresh-switch{width:100%;margin:0!important;flex-wrap:nowrap}
+#log-realtime .helper-text{white-space:nowrap}
+#log-realtime .log-area{padding:12px!important}
+}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
