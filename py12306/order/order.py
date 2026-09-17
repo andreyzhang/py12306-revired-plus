@@ -338,23 +338,24 @@ class Order:
             })
         response = self.session.post(API_CHECK_ORDER_INFO, data)
         result = response.json()
-        if result.get('data.submitStatus'):  # 成功
+        result_data = result.get('data') or {}
+        if result_data.get('submitStatus'):  # 成功
             # ifShowPassCode 需要验证码
             OrderLog.add_quick_log(OrderLog.MESSAGE_CHECK_ORDER_INFO_SUCCESS).flush()
-            if result.get('data.ifShowPassCode') != 'N':
+            if result_data.get('ifShowPassCode') != 'N':
                 self.is_need_auth_code = True
 
             # if ( ticketInfoForPassengerForm.isAsync == ticket_submit_order.request_flag.isAsync & & ticketInfoForPassengerForm.queryLeftTicketRequestDTO.ypInfoDetail != "") { 不需要排队检测 js TODO
             return True
         else:
             error = CommonLog.MESSAGE_API_RESPONSE_CAN_NOT_BE_HANDLE
-            if not result.get('data.isNoActive'):
-                error = result.get('data.errMsg', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR)
+            if not result_data.get('isNoActive'):
+                error = result_data.get('errMsg', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR)
             else:
-                if result.get('data.checkSeatNum'):
-                    error = '无法提交您的订单! ' + result.get('data.errMsg')
+                if result_data.get('checkSeatNum'):
+                    error = '无法提交您的订单! ' + result_data.get('errMsg', '')
                 else:
-                    error = '出票失败! ' + result.get('data.errMsg')
+                    error = '出票失败! ' + result_data.get('errMsg', '')
             OrderLog.add_quick_log(OrderLog.MESSAGE_CHECK_ORDER_INFO_FAIL.format(error)).flush()
         return False
 
@@ -394,6 +395,7 @@ class Order:
         response = self.session.post(API_GET_QUEUE_COUNT, data)
         result = response.json()
         if result.get('status', False):  # 成功
+            result_data = result.get('data') or {}
             """
             "data": { 
                 "count": "66",
@@ -406,7 +408,11 @@ class Order:
             """
             # if result.get('isRelogin') == 'Y': # 重新登录 TODO
 
-            ticket = result.get('data.ticket').split(',')  # 余票列表
+            ticket = str(result_data.get('ticket') or '').split(',')  # 余票列表
+            if not ticket[0]:
+                OrderLog.add_quick_log(OrderLog.MESSAGE_GET_QUEUE_COUNT_FAIL.format(
+                    '接口未返回排队余票信息')).flush()
+                return False
             # 这里可以判断 是真实是 硬座还是无座，避免自动分配到无座
             ticket_number = ticket[0]  # 余票
             if ticket_number != '充足' and int(ticket_number) <= 0:
@@ -416,11 +422,11 @@ class Order:
                     OrderLog.add_quick_log(OrderLog.MESSAGE_GET_QUEUE_INFO_NO_SEAT).flush()
                     return False
 
-            if result.get('data.op_2') == 'true':
+            if result_data.get('op_2') == 'true':
                 OrderLog.add_quick_log(OrderLog.MESSAGE_GET_QUEUE_LESS_TICKET).flush()
                 return False
 
-            current_position = int(result.get('data.countT', 0))
+            current_position = int(result_data.get('countT', 0))
             OrderLog.add_quick_log(
                 OrderLog.MESSAGE_GET_QUEUE_INFO_SUCCESS.format(current_position, ticket_number)).flush()
             return True
@@ -473,19 +479,20 @@ class Order:
         result = response.json()
 
         if 'data' in result:
+            result_data = result.get('data') or {}
             """
            "data": {
                 "submitStatus": true
             }
             """
-            if result.get('data.submitStatus'):  # 成功
+            if result_data.get('submitStatus'):  # 成功
                 OrderLog.add_quick_log(OrderLog.MESSAGE_CONFIRM_SINGLE_FOR_QUEUE_SUCCESS).flush()
                 return True
             else:
                 # 加入小黑屋 TODO
                 OrderLog.add_quick_log(
-                    OrderLog.MESSAGE_CONFIRM_SINGLE_FOR_QUEUE_ERROR.format(
-                        result.get('data.errMsg', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR))).flush()
+                        OrderLog.MESSAGE_CONFIRM_SINGLE_FOR_QUEUE_ERROR.format(
+                        result_data.get('errMsg', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR))).flush()
         else:
             OrderLog.add_quick_log(OrderLog.MESSAGE_CONFIRM_SINGLE_FOR_QUEUE_FAIL.format(
                 result.get('messages', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR))).flush()
@@ -507,7 +514,7 @@ class Order:
             self.queue_num += 1
             # TODO 取消超时订单，待优化
             data = {  #
-                'random': str(random.random())[2:],
+                'random': str(int(time.time() * 1000)),
                 'tourFlag': 'dc',
                 '_json_att': '',
                 'REPEAT_SUBMIT_TOKEN': self.user_ins.global_repeat_submit_token,
@@ -536,9 +543,11 @@ class Order:
                     # 计算等待时间
                     wait_time = int(result_data.get('waitTime'))
                     if wait_time == -1:  # 成功
-                        # /otn/confirmPassenger/resultOrderForDcQueue 请求订单状态 目前不需要
-                        # 不应该走到这
-                        return order_id
+                        # A successful queue response normally includes the
+                        # order id. Keep polling when it arrives one response
+                        # later instead of treating an incomplete response as
+                        # a failed order.
+                        pass
                     elif wait_time == -100:  # 重新获取订单号
                         pass
                     elif wait_time >= 0:  # 等待

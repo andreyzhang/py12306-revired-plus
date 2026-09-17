@@ -1,3 +1,4 @@
+import ast
 import base64
 import pickle
 import re
@@ -16,6 +17,96 @@ from py12306.log.order_log import OrderLog
 from py12306.log.user_log import UserLog
 from py12306.log.common_log import CommonLog
 from py12306.order.order import Browser
+
+
+def _extract_js_object_literal(html, variable_name):
+    """Extract a JavaScript object literal without executing page script."""
+    match = re.search(r'\bvar\s+{}\s*=\s*'.format(re.escape(variable_name)), html)
+    if not match:
+        return None
+
+    start = match.end()
+    while start < len(html) and html[start].isspace():
+        start += 1
+    if start >= len(html) or html[start] != '{':
+        return None
+
+    depth = 0
+    quote = None
+    escaped = False
+    for index in range(start, len(html)):
+        char = html[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in ('"', "'"):
+            quote = char
+        elif char == '{':
+            depth += 1
+        elif char == '}':
+            depth -= 1
+            if depth == 0:
+                return html[start:index + 1]
+    return None
+
+
+def _normalize_js_literals(source):
+    """Convert JSON-style literals outside strings for ast.literal_eval."""
+    output = []
+    token = []
+    quote = None
+    escaped = False
+
+    def flush_token():
+        if not token:
+            return
+        value = ''.join(token)
+        output.append({
+            'true': 'True',
+            'false': 'False',
+            'null': 'None',
+            'undefined': 'None',
+        }.get(value, value))
+        token.clear()
+
+    for char in source:
+        if quote:
+            output.append(char)
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in ('"', "'"):
+            flush_token()
+            quote = char
+            output.append(char)
+        elif char.isalpha() or char == '_':
+            token.append(char)
+        else:
+            flush_token()
+            output.append(char)
+    flush_token()
+    return ''.join(output)
+
+
+def _parse_js_object(html, variable_name):
+    source = _extract_js_object_literal(html, variable_name)
+    if not source:
+        return None
+    try:
+        return json.loads(source)
+    except (TypeError, ValueError):
+        try:
+            return ast.literal_eval(_normalize_js_literals(source))
+        except (SyntaxError, ValueError):
+            return None
 
 
 class UserJob:
@@ -52,6 +143,11 @@ class UserJob:
 
     def init_data(self, info):
         self.session = Request()
+        self.session.headers.update({
+            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/124.0.0.0 Safari/537.36'),
+        })
         self.session.add_response_hook(self.response_login_check)
         self.key = str(info.get('key'))
         self.user_name = info.get('user_name')
@@ -454,9 +550,16 @@ class UserJob:
         self.is_alive = False
 
     def response_login_check(self, response, **kwargs):
-        response_data = response.json().get('data') or {}
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            # This hook also receives HTML pages such as initDc. They are not
+            # login-status responses and must pass through untouched.
+            return response
+        response_data = payload.get('data') or {}
         if Config().is_master() and response_data.get('noLogin') == 'true':  # relogin
             self.handle_login(expire=True)
+        return response
 
     def get_user_passengers(self):
         if self.passengers: return self.passengers
@@ -592,29 +695,45 @@ class UserJob:
         :return:
         """
         data = {'_json_att': ''}
-        response = self.session.post(API_INITDC_URL, data)
-        html = response.text or ''
-        token = re.search(r'var globalRepeatSubmitToken = \'(.+?)\'', html)
-        form = re.search(r'var ticketInfoForPassengerForm *= *(\{.+\})', html)
-        order = re.search(r'var orderRequestDTO *= *(\{.+\})', html)
-        # 系统忙，请稍后重试
-        if html.find('系统忙，请稍后重试') != -1:
-            OrderLog.add_quick_log(OrderLog.MESSAGE_REQUEST_INIT_DC_PAGE_FAIL).flush()  # 重试无用，直接跳过
-            return False, False, html
-        try:
-            self.global_repeat_submit_token = token.groups()[0]
-            self.ticket_info_for_passenger_form = json.loads(form.groups()[0].replace("'", '"'))
-            self.order_request_dto = json.loads(order.groups()[0].replace("'", '"'))
-        except Exception as exc:
-            target = getattr(response, 'url', '') or ''
-            if 'passport' in target or 'login' in html.lower():
-                reason = '登录会话已失效或被 12306 风控拦截'
-            elif not token:
-                reason = '订单页未返回重复提交令牌，可能被 12306 限流'
+        html = ''
+        attempts = max(1, min(Config().REQUEST_MAX_RETRY, 3))
+        for attempt in range(1, attempts + 1):
+            response = self.session.post(API_INITDC_URL, data=data, headers={
+                'Referer': 'https://kyfw.12306.cn/otn/leftTicket/init',
+                'Origin': 'https://kyfw.12306.cn',
+            })
+            html = response.text or ''
+            token = re.search(r"var\s+globalRepeatSubmitToken\s*=\s*['\"](.+?)['\"]", html)
+            form = _parse_js_object(html, 'ticketInfoForPassengerForm')
+            order = _parse_js_object(html, 'orderRequestDTO')
+            if html.find('系统忙，请稍后重试') != -1:
+                reason = '12306 系统忙'
             else:
-                reason = '订单页格式发生变化（{}）'.format(type(exc).__name__)
-            OrderLog.add_quick_log('订单初始化失败：{}，本次放弃下单'.format(reason)).flush()
-            return False, False, html  # TODO Error
+                try:
+                    self.global_repeat_submit_token = token.groups()[0]
+                    if not form or not order:
+                        raise ValueError('missing order form data')
+                    self.ticket_info_for_passenger_form = form
+                    self.order_request_dto = order
+                    break
+                except Exception as exc:
+                    target = getattr(response, 'url', '') or ''
+                    if 'passport' in target or 'login' in html.lower():
+                        reason = '登录会话已失效'
+                        self.set_last_heartbeat(0)
+                    elif not token:
+                        reason = '订单页未返回重复提交令牌'
+                    else:
+                        reason = '订单页格式发生变化（{}）'.format(type(exc).__name__)
+            OrderLog.add_quick_log(
+                '订单初始化失败（{}/{}）：{}；HTTP {}，响应类型 {}'.format(
+                    attempt, attempts, reason, response.status_code or '无响应',
+                    response.headers.get('Content-Type', '未知'))).flush()
+            if attempt < attempts:
+                stay_second(1)
+        else:
+            OrderLog.add_quick_log('订单初始化连续失败，本次放弃下单').flush()
+            return False, False, html
 
         slide_val = re.search(r"var if_check_slide_passcode.*='(\d?)'", html)
         is_slide = False

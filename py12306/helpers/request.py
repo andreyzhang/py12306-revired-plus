@@ -69,6 +69,11 @@ class Request(HTMLSession):
                 from py12306.config import Config
                 kwargs['timeout'] = Config().TIME_OUT_OF_REQUEST
             response = super().request(*args, **kwargs)
+            # requests-html no longer invokes _handle_response with some
+            # requests/Python combinations. Wrap json() here as well so the
+            # legacy dotted-key lookups keep returning Dict values.
+            if not hasattr(response, 'old_json'):
+                expand_class(response, 'json', Request.json)
             return response
         except RequestException as e:
             from py12306.log.common_log import CommonLog
